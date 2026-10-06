@@ -1,0 +1,8 @@
+﻿__pycache__/
+*.pyc
+.pytest_cache/
+reports/
+kev.json
+venv/
+.env
+.DS_Store
