@@ -1,8 +1,23 @@
-﻿__pycache__/
-*.pyc
-.pytest_cache/
+﻿# Virtual Environment
 venv/
+env/
+.env
+
+# Python Caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Execution Outputs & Sensitive Data
 reports/
 cache/
+
+# Sample Data (Uncomment to ignore scan files if they contain real IPs/host data)
+# sample_data/*.xml
+# sample_data/*.json
+
+# OS / Editor Files
 .DS_Store
-.env
+.vscode/
+.idea/
