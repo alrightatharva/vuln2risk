@@ -9,10 +9,17 @@ class AssetCriticality(Enum):
     Critical = "Critical"
 
 class SSVCDecision(Enum):
-    Track = "Track"
-    TrackStar = "Track*"
-    Attend = "Attend"
-    Act = "Act"
+    ACT = "Act"
+    ATTEND = "Attend"
+    TRACK_STAR = "Track*"
+    TRACK = "Track"
+
+class FindingStatus(Enum):
+    OPEN = "Open"
+    VALIDATED = "Validated"
+    REMEDIATION = "Remediating"
+    RETEST = "Retesting"
+    FIXED = "Fixed"
 
 @dataclass
 class Finding:
@@ -21,17 +28,19 @@ class Finding:
     target_port: int
     protocol: str
     tool_source: str
-    raw_evidence: str
-    cve_id: Optional[str] = None
-    cwe_id: Optional[str] = None
     service_name: Optional[str] = None
     service_version: Optional[str] = None
+    cve_id: Optional[str] = None
     cvss_base: Optional[float] = None
-    epss_score: Optional[float] = None
-    epss_percentile: Optional[float] = None
+    epss_score: Optional[float] = 0.0
     is_in_cisa_kev: bool = False
     is_internet_facing: bool = False
     asset_criticality: AssetCriticality = AssetCriticality.Medium
     ssvc_decision: Optional[SSVCDecision] = None
     remediation_sla_days: Optional[int] = None
-    remediation_guidance: Optional[str] = None
+    status: FindingStatus = FindingStatus.OPEN
+    justification: str = ""
+    
+    # Restored original parser fields
+    raw_evidence: Optional[str] = None
+    description: Optional[str] = None

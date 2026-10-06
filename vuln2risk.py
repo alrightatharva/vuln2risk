@@ -36,29 +36,27 @@ def main():
     parser.add_argument("--nmap", help="Path to Nmap XML output file", type=str)
     parser.add_argument("--nuclei", help="Path to Nuclei JSONL output file", type=str)
     parser.add_argument("--openvas", help="Path to OpenVAS XML output file", type=str)
+    parser.add_argument("--inventory", help="Path to Asset Inventory JSON file", type=str)
     parser.add_argument("--report-id", default=default_report, help="Custom ID for the generated files", type=str)
-    parser.add_argument("--criticality", choices=['Low', 'Medium', 'High', 'Critical'], default='Medium', help="Asset Criticality")
-    parser.add_argument("--internet-facing", action='store_true', help="Flag if the asset is exposed to the internet")
+    parser.add_argument("--criticality", choices=['Low', 'Medium', 'High', 'Critical'], default='Medium', help="Global Asset Criticality fallback")
+    parser.add_argument("--internet-facing", action='store_true', help="Global flag if assets are internet exposed")
     parser.add_argument("--csv", action='store_true', help="Export findings to CSV")
-    parser.add_argument("--pdf", action='store_true', help="Export HTML report to PDF (requires pdfkit)")
+    parser.add_argument("--pdf", action='store_true', help="Export HTML report to PDF")
     args = parser.parse_args()
 
     if not any([args.nmap, args.nuclei, args.openvas]):
         console.print("[bold red][-] Error:[/bold red] You must provide at least one scan file.")
         return
 
-    console.print(Panel.fit("[bold blue]Vuln2Risk[/bold blue] | Explainable Vulnerability Prioritization Pipeline", border_style="blue", box=box.ROUNDED))
+    console.print(Panel.fit("[bold blue]Vuln2Risk[/bold blue] | Vulnerability Prioritization Pipeline", border_style="blue", box=box.ROUNDED))
 
     all_findings = []
     
     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as progress:
         task_ingest = progress.add_task("[cyan]Ingesting scanner data...", start=False)
-        if args.nmap:
-            all_findings.extend(NmapParser.parse(args.nmap))
-        if args.nuclei:
-            all_findings.extend(NucleiParser.parse(args.nuclei))
-        if args.openvas:
-            all_findings.extend(OpenVASParser.parse(args.openvas))
+        if args.nmap: all_findings.extend(NmapParser.parse(args.nmap))
+        if args.nuclei: all_findings.extend(NucleiParser.parse(args.nuclei))
+        if args.openvas: all_findings.extend(OpenVASParser.parse(args.openvas))
         progress.update(task_ingest, description=f"[green]✔ Ingested {len(all_findings)} raw findings")
 
         task_dedup = progress.add_task("[cyan]Deduplicating cross-scanner findings...", start=False)
@@ -75,26 +73,38 @@ def main():
         findings = EnrichmentEngine.enrich(findings, is_internet_facing=args.internet_facing, asset_criticality=criticality_enum)
         progress.update(task_enrich, description="[green]✔ Threat Intelligence enrichment complete")
 
-        task_ssvc = progress.add_task("[cyan]Calculating Remediation SLAs...", start=False)
+        task_ssvc = progress.add_task("[cyan]Mapping Assets & Calculating SLAs...", start=False)
+        
+        inventory = {}
+        if args.inventory and os.path.exists(args.inventory):
+            with open(args.inventory, 'r') as inv_f:
+                inventory = json.load(inv_f)
+
         summary = {"Act": 0, "Attend": 0, "Track*": 0, "Track": 0}
         for f in findings:
+            if f.target_host in inventory:
+                host_data = inventory[f.target_host]
+                f.asset_criticality = AssetCriticality[host_data.get("criticality", args.criticality)]
+                f.is_internet_facing = host_data.get("internet_facing", args.internet_facing)
+            
             f.ssvc_decision = SSVCEngine.evaluate(f)
             summary[f.ssvc_decision.value] += 1
+            
         progress.update(task_ssvc, description="[green]✔ SSVC Prioritization complete")
 
     console.print("")
+    
     act_findings = [f for f in findings if f.ssvc_decision.value == "Act"]
     if act_findings:
-        # SAFE MAX COMPARISON: Filter out None values before sorting
         top_threat = sorted(act_findings, key=lambda x: x.epss_score or 0.0, reverse=True)[0]
         
         factors = f"{'[bold green]✔[/bold green]' if top_threat.is_in_cisa_kev else '[dim]✖[/dim]'} CISA KEV Listed\n"
         factors += f"[bold green]✔[/bold green] EPSS Score: [bold]{(top_threat.epss_score or 0.0) * 100:.1f}%[/bold]\n"
         factors += f"{'[bold green]✔[/bold green]' if top_threat.is_internet_facing else '[dim]✖[/dim]'} Internet Facing\n"
-        factors += f"[bold green]✔[/bold green] Asset: {args.criticality}"
+        factors += f"[bold green]✔[/bold green] Asset: {top_threat.asset_criticality.value}"
 
         verdict = f"\n[bold white]SSVC Decision:[/bold white]\n[bold red]► {top_threat.ssvc_decision.value.upper()}[/bold red]\n\n"
-        verdict += f"[bold white]Remediation SLA:[/bold white]\n[bold red]► {top_threat.remediation_sla_days} Hours[/bold red]"
+        verdict += f"[bold white]Remediation SLA:[/bold white]\n[bold red]► {top_threat.remediation_sla_days} Days[/bold red]"
 
         grid = Table.grid(padding=(0, 2))
         grid.add_row(
@@ -136,14 +146,27 @@ def main():
 
     if args.csv:
         csv_path = os.path.join("reports", f"findings_{args.report_id}.csv")
-        with open(csv_path, "w", newline="", encoding="utf-8") as csvfile:
-            if findings:
-                writer = csv.DictWriter(csvfile, fieldnames=asdict(findings[0]).keys())
+        
+        clean_findings = []
+        for f in findings:
+            row = asdict(f)
+            row['asset_criticality'] = row['asset_criticality'].value if isinstance(row['asset_criticality'], Enum) else row['asset_criticality']
+            row['ssvc_decision'] = row['ssvc_decision'].value if row['ssvc_decision'] else None
+            row['status'] = row['status'].value if isinstance(row['status'], Enum) else row['status']
+            
+            # Preserve original newlines and format but handle None values safely
+            for field in ['justification', 'raw_evidence', 'description']:
+                row[field] = str(row[field]) if row.get(field) is not None else ""
+            
+            clean_findings.append(row)
+
+        # Ensure utf-8-sig (BOM) is used so Excel recognizes the UTF-8 encoding on Windows
+        with open(csv_path, "w", newline="", encoding="utf-8-sig") as csvfile:
+            if clean_findings:
+                # QUOTE_ALL ensures Excel treats the multiline newlines as a single cell block
+                writer = csv.DictWriter(csvfile, fieldnames=clean_findings[0].keys(), quoting=csv.QUOTE_ALL)
                 writer.writeheader()
-                for f in findings:
-                    row = asdict(f)
-                    row['ssvc_decision'] = row['ssvc_decision'].value
-                    writer.writerow(row)
+                writer.writerows(clean_findings)
         console.print(f"[bold green]✔ CSV Ledger saved to:[/bold green] {csv_path}")
 
     if args.pdf:

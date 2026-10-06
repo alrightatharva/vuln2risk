@@ -1,40 +1,47 @@
-﻿import xml.etree.ElementTree as ET
+﻿from typing import List, Optional
+import xml.etree.ElementTree as ET
 from core.models import Finding
 
 class OpenVASParser:
     @staticmethod
-    def parse(filepath: str) -> list:
+    def parse(xml_file_path: str) -> List[Finding]:
         findings = []
-        try:
-            tree = ET.parse(filepath)
-            root = tree.getroot()
+        tree = ET.parse(xml_file_path)
+        root = tree.getroot()
+
+        for result in root.findall(".//result"):
+            name = result.findtext("name", default="OpenVAS Vulnerability")
+            host = result.findtext("host", default="unknown")
+            port_text = result.findtext("port", default="0/tcp")
             
-            for result in root.findall(".//result"):
-                cve = result.find(".//cve")
-                if cve is None or cve.text == "NOCVE":
-                    continue
-                    
-                host = result.find(".//host")
-                port = result.find(".//port")
-                threat = result.find(".//threat")
-                name = result.find(".//name")
+            port = 0
+            protocol = "tcp"
+            if "/" in port_text:
+                parts = port_text.split("/")
+                if parts[0].isdigit(): port = int(parts[0])
+                protocol = parts[1]
+
+            nvt = result.find("nvt")
+            cve_id: Optional[str] = None
+            cvss_base: Optional[float] = None
+
+            if nvt is not None:
+                cve_tag = nvt.findtext("cve")
+                if cve_tag and cve_tag.upper().startswith("CVE-"):
+                    cve_id = cve_tag.strip()
                 
-                # Parse CVSS from OpenVAS format
-                cvss = 0.0
-                if threat is not None and threat.text in ['High', 'Critical']:
-                    cvss = 8.0 # Fallback mapping if exact CVSS vector isn't extracted
-                
-                findings.append(Finding(
-                    title=name.text if name is not None else "OpenVAS Finding",
-                    target_host=host.text if host is not None else "Unknown",
-                    target_port=int(port.text.split('/')[0]) if port is not None and '/' in port.text else 0,
-                    protocol=port.text.split('/')[1] if port is not None and '/' in port.text else "tcp",
-                    tool_source="openvas",
-                    raw_evidence="",
-                    cve_id=cve.text.strip(),
-                    cvss_base=cvss
-                ))
-        except Exception:
-            pass
-            
+                cvss_text = nvt.findtext("cvss_base")
+                if not cvss_text:
+                    cvss_text = result.findtext("severity")
+                if cvss_text:
+                    try:
+                        cvss_val = float(cvss_text.strip())
+                        if cvss_val > 0.0: cvss_base = cvss_val
+                    except ValueError:
+                        cvss_base = None
+
+            findings.append(Finding(
+                title=name, target_host=host, target_port=port, protocol=protocol,
+                tool_source="OpenVAS", cve_id=cve_id, cvss_base=cvss_base
+            ))
         return findings
