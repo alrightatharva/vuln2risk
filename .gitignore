@@ -1,8 +1,8 @@
 ﻿__pycache__/
 *.pyc
 .pytest_cache/
-reports/
-kev.json
 venv/
-.env
+reports/
+cache/
 .DS_Store
+.env

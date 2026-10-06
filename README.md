@@ -1,22 +1,22 @@
-# Vuln2Risk: Risk-Based Vulnerability Prioritization Pipeline 🎯🛡️
+# Vuln2Risk: Explainable Vulnerability Prioritization Pipeline 🎯🛡️
 
-Vuln2Risk is an automated security engineering pipeline designed to solve the critical industry problem of **vulnerability alert fatigue**.
+An open-source vulnerability triage pipeline that turns noisy, multi-scanner output into an explainable remediation queue using real-world exploitability, asset exposure, and the SSVC framework.
 
-Modern vulnerability scanners (Nmap, Nuclei, OpenVAS, Nessus) often generate hundreds of raw alerts per host. Vuln2Risk ingests cross-scanner data, unifies the findings into a common data model, deduplicates overlapping alerts, and enriches them with real-time Threat Intelligence to prioritize remediation based on actual exploitability rather than theoretical severity.
+Modern vulnerability management products recognize that CVSS alone is insufficient. Vuln2Risk automates the correlation of raw scan data with live threat intelligence to produce defensible, SLA-driven patching decisions with clear explainability for engineering teams.
 
 ---
 
-## 🌟 Key Features & Methodology
+## 🌟 The Impact: Signal Over Noise
 
-Vuln2Risk moves beyond static CVSS scores by implementing a multi-stage data processing and decision architecture:
+Vuln2Risk transforms verbose scanner output into concise, actionable metrics. In a standard lab test against a Metasploitable instance, Vuln2Risk took **463 raw alerts** across Nmap and Nuclei, grouped them into **44 unique component upgrades**, and identified that only **6 components required immediate action**.
 
-1. **Multi-Scanner Ingestion & Normalization:** Parses raw XML/JSONL outputs from distinct security tools (Nmap, Nuclei, OpenVAS).
-2. **Intelligent Deduplication:** Aggregates findings by `Target IP + Port + CVE`, rolling up hundreds of raw scanner hits.
-3. **Real-Time Threat Enrichment:**
-   - **CISA KEV:** Cross-references findings against the Cybersecurity and Infrastructure Security Agency's catalog of Known Exploited Vulnerabilities.
-   - **FIRST EPSS:** Queries the Exploit Prediction Scoring System API to assign a dynamic probability (0–100%) of wild exploitation.
-4. **SSVC Decision Engine:** Implements the CISA Stakeholder-Specific Vulnerability Categorization (SSVC) decision tree to calculate SLA timelines.
-5. **Actionable Reporting:** Generates a machine-readable JSON ledger and a styled, human-readable HTML Executive Report.
+For every high-priority finding, Vuln2Risk provides a transparent "Priority Spotlight" justification so engineers know exactly *why* a patch is urgent:
+
+*   **✓ CISA KEV listed**
+*   **✓ EPSS: 100.0% exploitation probability**
+*   **✓ Internet-facing asset**
+*   **✓ High-criticality system**
+*   **Decision:** SSVC → ACT (48-hour SLA)
 
 ---
 
@@ -40,16 +40,14 @@ graph TD
     I -->|Attend| K(14d SLA)
     I -->|Track| L(30d-90d SLA)
 
-    J --> M[HTML Executive Report]
+    J --> M[HTML Executive Dashboard]
     K --> M
     L --> M
 
-    J --> N[JSON Ledger]
+    J --> N[JSON / CSV / PDF Exports]
     K --> N
     L --> N
 ```
-
----
 
 ## 🚀 Installation & Local Usage
 
@@ -64,10 +62,8 @@ cd vuln2risk
 pip install -r requirements.txt
 
 # Run the pipeline
-python vuln2risk.py --nmap sample_data/nmap_scan2.xml --nuclei sample_data/report1.json --criticality High --internet-facing
+python vuln2risk.py --nmap sample_data/nmap_scan2.xml --nuclei sample_data/report1.json --criticality High --internet-facing --csv
 ```
-
----
 
 ## 🐳 Docker Deployment
 
@@ -83,15 +79,6 @@ docker build -t vuln2risk .
 
 Because the container is isolated, you must map your local data and report directories using the `-v` flag so the tool can read your scans and save the output to your host machine.
 
-**Linux / macOS:**
-
-```bash
-docker run --rm \
-  -v $(pwd)/sample_data:/app/sample_data \
-  -v $(pwd)/reports:/app/reports \
-  vuln2risk --nmap sample_data/nmap_scan2.xml --nuclei sample_data/report1.json --criticality High --internet-facing
-```
-
 **Windows (PowerShell):**
 
 ```powershell
@@ -101,8 +88,6 @@ docker run --rm `
   vuln2risk --nmap sample_data/nmap_scan2.xml --nuclei sample_data/report1.json --criticality High --internet-facing
 ```
 
----
-
 ## ⚙️ Command Line Arguments
 
 | Argument | Description | Default |
@@ -110,44 +95,15 @@ docker run --rm `
 | `--nmap` | Path to Nmap XML output file | None |
 | `--nuclei` | Path to Nuclei JSONL output file | None |
 | `--openvas` | Path to OpenVAS XML output file | None |
-| `--criticality` | Asset business value (`Low`, `Medium`, `High`, `Critical`) | Medium |
+| `--criticality` | Asset business value (Low, Medium, High, Critical) | Medium |
 | `--internet-facing` | Flag to indicate if the host is exposed to the WAN | False |
-| `--report-id` | Custom identifier for generated output files | Timestamp |
-
----
-
-## 📊 Example Output
-
-Vuln2Risk transforms verbose scanner output into concise, actionable metrics. For example, a recent scan generated **463 raw findings**. Vuln2Risk deduplicated this down to **44 component upgrades**, with only **11 requiring immediate (ACT) remediation**.
-
-**Rich CLI Interface:**
-
-```
-╭───────────────────────────────────────────╮
-│ Vuln2Risk | Security Engineering Pipeline │
-╰───────────────────────────────────────────╯
-[+] Loaded 1734 known exploited CVEs from CISA KEV.
-[*] Querying EPSS API for exploit probabilities...
-
-              Actionable Findings Summary
-┏━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
-┃ SSVC Decision          ┃   SLA    ┃ Component Count ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
-│ ACT (Immediate Action) │ 48 Hours │              11 │
-│ ATTEND (Prioritize)    │ 14 Days  │               1 │
-│ TRACK (Next Sprint)    │ 30 Days  │               0 │
-│ TRACK (Standard Cycle) │ 90 Days  │              32 │
-└────────────────────────┴──────────┴─────────────────┘
-
-✔ JSON Ledger saved to: reports/findings_20261005_191543.json
-✔ Assessment report generated at: reports/vuln2risk_report_20261005_191543.html
-```
-
----
+| `--report-id` | Custom identifier for generated output files | Hostname_Timestamp |
+| `--csv` | Export findings to a flattened CSV file | False |
+| `--pdf` | Export the HTML dashboard to a PDF (requires pdfkit) | False |
 
 ## 📂 Project Structure
 
-```
+```text
 vuln2risk/
 ├── vuln2risk.py            # Main CLI entrypoint
 ├── core/
@@ -161,15 +117,13 @@ vuln2risk/
 ├── ssvc/
 │   └── decision.py         # SSVC decision tree logic
 ├── reporters/
-│   └── generator.py        # HTML and JSON output generation
+│   └── generator.py        # HTML, Chart.js, and CSV export logic
 ├── tests/
 │   └── test_ssvc.py        # PyTest unit tests for decision matrix
 ├── Dockerfile              # Container deployment instructions
 └── requirements.txt        # Python dependencies
 ```
 
----
-
 ## 📜 License
 
-This project is open-source and available under the [MIT License](LICENSE).
+This project is open-source and available under the MIT License.
