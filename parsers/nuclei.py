@@ -1,4 +1,4 @@
-﻿import json
+import json
 from typing import List
 from core.models import Finding
 
@@ -15,11 +15,22 @@ class NucleiParser:
                     port = int(data.get("port", 0)) if data.get("port") else 0
                     info = data.get("info", {})
                     
-                    cve_ids = info.get("classification", {}).get("cve-id", [])
+                    classification = info.get("classification", {})
+                    cve_ids = classification.get("cve-id", [])
                     if not cve_ids:
                         cve_ids = [None]
                         
-                    cvss_score = info.get("classification", {}).get("cvss-score", 0.0)
+                    cvss_score = classification.get("cvss-score", 0.0)
+                    
+                    # Extract CPE strings (can be string or list in Nuclei schema)
+                    cpe_entry = classification.get("cpe")
+                    cpes = []
+                    if isinstance(cpe_entry, list):
+                        cpes = [str(c).strip() for c in cpe_entry if c and str(c).strip()]
+                    elif isinstance(cpe_entry, str) and cpe_entry.strip():
+                        cpes = [cpe_entry.strip()]
+
+                    primary_cpe = cpes[0] if cpes else None
                     
                     for cve in cve_ids:
                         findings.append(Finding(
@@ -31,7 +42,9 @@ class NucleiParser:
                             cve_id=cve,
                             service_name=data.get("type", "unknown"),
                             raw_evidence=data.get("extracted-results", [""])[0] if data.get("extracted-results") else info.get("description", ""),
-                            cvss_base=float(cvss_score) if cvss_score else None
+                            cvss_base=float(cvss_score) if cvss_score else None,
+                            cpe=primary_cpe,
+                            cpes=list(cpes)
                         ))
                 except Exception:
                     continue

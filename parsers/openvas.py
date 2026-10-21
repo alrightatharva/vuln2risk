@@ -1,5 +1,6 @@
-﻿from typing import List, Optional
+from typing import List, Optional
 import xml.etree.ElementTree as ET
+import re
 from core.models import Finding
 
 class OpenVASParser:
@@ -24,11 +25,23 @@ class OpenVASParser:
             nvt = result.find("nvt")
             cve_id: Optional[str] = None
             cvss_base: Optional[float] = None
+            openvas_cpes: List[str] = []
 
             if nvt is not None:
                 cve_tag = nvt.findtext("cve")
                 if cve_tag and cve_tag.upper().startswith("CVE-"):
                     cve_id = cve_tag.strip()
+
+                for cpe_elem in nvt.findall(".//cpe"):
+                    if cpe_elem.text and cpe_elem.text.strip():
+                        openvas_cpes.append(cpe_elem.text.strip())
+
+                if not openvas_cpes:
+                    tags_text = nvt.findtext("tags", default="")
+                    if "cpe=" in tags_text:
+                        match = re.search(r'cpe=([^\s|]+)', tags_text)
+                        if match:
+                            openvas_cpes.append(match.group(1).strip())
                 
                 cvss_text = nvt.findtext("cvss_base")
                 if not cvss_text:
@@ -40,8 +53,11 @@ class OpenVASParser:
                     except ValueError:
                         cvss_base = None
 
+            primary_cpe = openvas_cpes[0] if openvas_cpes else None
+
             findings.append(Finding(
                 title=name, target_host=host, target_port=port, protocol=protocol,
-                tool_source="OpenVAS", cve_id=cve_id, cvss_base=cvss_base
+                tool_source="OpenVAS", cve_id=cve_id, cvss_base=cvss_base,
+                cpe=primary_cpe, cpes=list(openvas_cpes)
             ))
         return findings

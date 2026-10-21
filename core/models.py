@@ -1,6 +1,7 @@
-﻿from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Optional, List
+from core.cpe import parse_cpe, CPE
 
 class AssetCriticality(Enum):
     Low = "Low"
@@ -44,3 +45,28 @@ class Finding:
     # Restored original parser fields
     raw_evidence: Optional[str] = None
     description: Optional[str] = None
+
+    # CPE integration
+    cpe: Optional[str] = None
+    cpes: List[str] = field(default_factory=list)
+
+    # Lifecycle & EOL tracking
+    is_eol: bool = False
+    eol_cycle: Optional[str] = None
+    eol_date: Optional[str] = None
+
+    # Weaponization & Exploit intelligence
+    has_public_exploit: bool = False
+    exploit_references: List[str] = field(default_factory=list)
+
+    @property
+    def parsed_cpe(self) -> Optional[CPE]:
+        """Returns structured CPE object for the primary CPE if present."""
+        return parse_cpe(self.cpe) if self.cpe else None
+
+    @property
+    def vendor(self) -> str:
+        """Returns the vendor identifier derived from CPE or service name."""
+        if self.parsed_cpe and self.parsed_cpe.vendor and self.parsed_cpe.vendor not in ("*", "-"):
+            return self.parsed_cpe.vendor
+        return self.service_name or "unknown"

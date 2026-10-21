@@ -1,7 +1,9 @@
-﻿import os
+import os
 import json
 import requests
 from datetime import datetime, timedelta
+from enrichment.eol import EOLEngine
+from enrichment.exploit import ExploitEngine
 
 class EnrichmentEngine:
     CACHE_DIR = "cache"
@@ -57,8 +59,20 @@ class EnrichmentEngine:
             finding.is_internet_facing = is_internet_facing
             finding.asset_criticality = asset_criticality
             
+            # Threat Intel (KEV & EPSS)
             if finding.cve_id:
                 finding.is_in_cisa_kev = finding.cve_id in kev_cves
                 finding.epss_score = epss_scores.get(finding.cve_id, 0.0)
+
+            # End-of-Life (EOL) Lifecycle Tracking
+            is_eol, cycle, eol_date = EOLEngine.check_eol(
+                finding.cpe, finding.service_name, finding.service_version
+            )
+            finding.is_eol = is_eol
+            finding.eol_cycle = cycle
+            finding.eol_date = eol_date
+
+            # Exploit / Weaponization Intelligence
+            ExploitEngine.enrich(finding)
                 
         return findings

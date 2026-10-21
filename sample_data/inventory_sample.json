@@ -1,0 +1,25 @@
+{
+  "hosts": {
+    "192.168.109.129": {
+      "criticality": "High",
+      "internet_facing": true,
+      "owner": "SecOps",
+      "tags": ["lab-target", "dmz"]
+    }
+  },
+  "cpes": {
+    "cpe:/a:apache:http_server": {
+      "criticality": "Critical",
+      "internet_facing": true,
+      "tags": ["web-server"]
+    },
+    "cpe:/a:vsftpd:vsftpd": {
+      "criticality": "Critical",
+      "tags": ["ftp-service"]
+    },
+    "cpe:/a:openbsd:openssh": {
+      "criticality": "High",
+      "tags": ["remote-access"]
+    }
+  }
+}

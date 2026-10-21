@@ -1,4 +1,4 @@
-﻿import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET
 import re
 from typing import List
 from core.models import Finding
@@ -28,6 +28,22 @@ class NmapParser:
                 version = service.get('version', '') if service is not None else ''
                 service_version = f"{product} {version}".strip() or "Unknown Version"
 
+                # Extract CPE strings from service definition
+                cpes = []
+                if service is not None:
+                    for cpe_elem in service.findall('cpe'):
+                        if cpe_elem.text and cpe_elem.text.strip():
+                            cpes.append(cpe_elem.text.strip())
+
+                # Select primary CPE: prioritize application ('cpe:/a:'), then OS or first available
+                primary_cpe = None
+                for c in cpes:
+                    if ":a:" in c or c.startswith("cpe:/a"):
+                        primary_cpe = c
+                        break
+                if not primary_cpe and cpes:
+                    primary_cpe = cpes[0]
+
                 vuln_scripts = port.findall(".//script[@id='vulners']")
                 
                 if not vuln_scripts:
@@ -40,7 +56,9 @@ class NmapParser:
                         cve_id=None,
                         service_name=service_name,
                         service_version=service_version,
-                        raw_evidence=""
+                        raw_evidence="",
+                        cpe=primary_cpe,
+                        cpes=list(cpes)
                     ))
                     continue
 
@@ -67,7 +85,9 @@ class NmapParser:
                                 service_name=service_name,
                                 service_version=service_version,
                                 raw_evidence=output,
-                                cvss_base=cvss_base
+                                cvss_base=cvss_base,
+                                cpe=primary_cpe,
+                                cpes=list(cpes)
                             ))
                             
                     if not cve_found:
@@ -80,7 +100,9 @@ class NmapParser:
                             cve_id=None,
                             service_name=service_name,
                             service_version=service_version,
-                            raw_evidence=output
+                            raw_evidence=output,
+                            cpe=primary_cpe,
+                            cpes=list(cpes)
                         ))
 
         return findings
